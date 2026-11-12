@@ -1,0 +1,27 @@
+# Dev overlay: publishes ports on localhost and adds the simulated fleet.
+services:
+  mosquitto:
+    ports: ["127.0.0.1:1883:1883"]
+  redis:
+    ports: ["127.0.0.1:6379:6379"]
+  db:
+    ports: ["127.0.0.1:5432:5432"]
+  control-api:
+    ports: ["127.0.0.1:8080:8080"]
+  telemetry:
+    ports: ["127.0.0.1:8081:8081"]
+  planner:
+    ports: ["127.0.0.1:9090:9090"]
+
+  fleet-sim:
+    image: ghcr.io/${GH_OWNER:-swarm-ops}/swarmops-fleet-sim:${TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: swarmops-fleet-sim/Dockerfile
+    environment:
+      MQTT_HOST: mosquitto
+      DRONE_COUNT: ${DRONE_COUNT:-10}
+      TELEMETRY_HZ: "2"
+    ports: ["127.0.0.1:8090:8090"]
+    depends_on: [mosquitto]
+    restart: unless-stopped

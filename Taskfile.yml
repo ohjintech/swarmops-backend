@@ -1,0 +1,48 @@
+# https://taskfile.dev  (brew install go-task)
+version: "3"
+
+vars:
+  COMPOSE_DEV: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml
+
+tasks:
+  tidy:
+    desc: Resolve Go deps and write go.sum (run once after cloning, then commit go.sum)
+    cmds: [go mod tidy]
+
+  build:
+    cmds: [go build ./...]
+
+  test:
+    desc: Go + planner tests
+    cmds:
+      - go test ./...
+      - task: planner:test
+
+  lint:
+    cmds:
+      - test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - go vet ./...
+      - cd planner && uv run ruff check .
+
+  planner:test:
+    dir: planner
+    cmds: [uv run pytest -q]
+
+  up:
+    desc: Run the full dev stack (broker, redis, db, services, fleet-sim)
+    cmds: ["{{.COMPOSE_DEV}} up --build {{.CLI_ARGS}}"]
+
+  down:
+    cmds: ["{{.COMPOSE_DEV}} down"]
+
+  logs:
+    cmds: ["{{.COMPOSE_DEV}} logs -f {{.CLI_ARGS}}"]
+
+  migrate:
+    desc: Apply SQL migrations to the dev database
+    cmds:
+      - go run github.com/pressly/goose/v3/cmd/goose@v3.24.3 -dir migrations postgres "postgres://swarmops:swarmops@localhost:5432/swarmops?sslmode=disable" up
+
+  ctl:
+    desc: "Run swarmctl, e.g. task ctl -- drones"
+    cmds: ["go run ./cmd/swarmctl {{.CLI_ARGS}}"]

@@ -1,0 +1,74 @@
+# Core stack. Combine with an overlay:
+#   dev:  docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.dev.yml up --build
+#   prod: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.prod.yml up -d
+#
+# Build contexts point at the parent folder (swarm-ops/) so sibling repos are reachable.
+name: swarmops
+
+x-common-env: &common-env
+  MQTT_URL: mqtt://mosquitto:1883
+  MQTT_USERNAME: ${MQTT_USERNAME:-}
+  MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+  REDIS_ADDR: redis:6379
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.21
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+
+  db:
+    # Postgres 16 + TimescaleDB + PostGIS in one image.
+    image: timescale/timescaledb-ha:pg16
+    environment:
+      POSTGRES_USER: swarmops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-swarmops}
+      POSTGRES_DB: swarmops
+    volumes:
+      - pgdata:/home/postgres/pgdata
+    restart: unless-stopped
+
+  control-api:
+    image: ghcr.io/${GH_OWNER:-swarm-ops}/swarmops-control-api:${TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: swarmops-backend/Dockerfile
+      args: { SERVICE: control-api }
+    environment:
+      <<: *common-env
+      HTTP_ADDR: ":8080"
+      ACK_TIMEOUT: 5s
+      PLANNER_ADDR: planner:9090
+    depends_on: [mosquitto, redis]
+    restart: unless-stopped
+
+  telemetry:
+    image: ghcr.io/${GH_OWNER:-swarm-ops}/swarmops-telemetry:${TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: swarmops-backend/Dockerfile
+      args: { SERVICE: telemetry }
+    environment:
+      <<: *common-env
+      HTTP_ADDR: ":8081"
+      SNAPSHOT_INTERVAL: 250ms
+    depends_on: [mosquitto, redis]
+    restart: unless-stopped
+
+  planner:
+    image: ghcr.io/${GH_OWNER:-swarm-ops}/swarmops-planner:${TAG:-latest}
+    build:
+      context: ../..
+      dockerfile: swarmops-backend/planner/Dockerfile
+    environment:
+      PLANNER_PORT: "9090"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

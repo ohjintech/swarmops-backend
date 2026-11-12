@@ -1,0 +1,17 @@
+# Prod overlay: Caddy terminates TLS; nothing else is reachable from outside.
+# fleet-sim runs as its own compose project (see swarmops-fleet-sim) joined to the
+# `swarmops_default` network, with broker credentials limited to swarm/v1/# topics.
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    ports: ["80:80", "443:443"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN, e.g. api.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [control-api, telemetry]
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
